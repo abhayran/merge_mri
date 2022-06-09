@@ -1,0 +1,4 @@
+*.nii
+*.dicom
+__pycache__
+.ipynb_checkpoints
