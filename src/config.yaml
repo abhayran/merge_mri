@@ -1,0 +1,17 @@
+use_gpu: True
+
+mlflow:
+  tracking_uri: "http://localhost:1234"
+  experiment_name: "3D"
+  run_name: "baseline"
+
+model:
+  input_dim: 3
+  hidden_dim: 256
+  num_hidden_layers: 3
+
+training:
+  lr: 3e-4
+  batch_size: 500000
+  num_epochs: 2000
+  image_log_interval: 10
