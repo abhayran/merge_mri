@@ -85,3 +85,4 @@ if __name__ == "__main__":
                 ).convert("L").save(image_path)
                 mlflow.log_artifact(image_path)
                 os.remove(image_path)
+        mlflow.pytorch.log_model(trainer.model, "model")

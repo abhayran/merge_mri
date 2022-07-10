@@ -31,6 +31,11 @@ class SirenDataset(torch.utils.data.Dataset):
         self.batch_size = batch_size
         self.length = (len(self.intensities) - 1) // self.batch_size + 1
 
+        self.shift = apply_affine(
+            self.affine, np.array([[0, 0, 0], [1, 1, 1]], dtype=float)
+        )
+        self.shift = self.shift[1] - self.shift[0]
+
     def __len__(self) -> int:
         return self.length
 
