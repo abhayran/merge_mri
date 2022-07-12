@@ -13,28 +13,30 @@ class SirenDataset(torch.utils.data.Dataset):
         self.shape = tuple(self.fdata.shape)
         assert len(self.shape) == 3
 
-        voxel_coordinates = get_mgrid(*((0, shape) for shape in self.shape))
+        self.voxel_coordinates = get_mgrid(*((0, shape) for shape in self.shape))
         self.intensities = self.fdata[
-            voxel_coordinates[:, 0],
-            voxel_coordinates[:, 1],
-            voxel_coordinates[:, 2],
+            self.voxel_coordinates[:, 0],
+            self.voxel_coordinates[:, 1],
+            self.voxel_coordinates[:, 2],
         ].float().unsqueeze(-1)
 
         # world coordinates in dm
         self.world_coordinates = torch.tensor(
             apply_affine(
                 self.affine,
-                voxel_coordinates.numpy(),
+                self.voxel_coordinates.numpy(),
             )
         ).float() / 100.
 
         self.batch_size = batch_size
         self.length = (len(self.intensities) - 1) // self.batch_size + 1
 
-        self.shift = apply_affine(
-            self.affine, np.array([[0, 0, 0], [1, 1, 1]], dtype=float)
+        mappings = apply_affine(
+            self.affine, np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=float)
         )
-        self.shift = self.shift[1] - self.shift[0]
+        self.shifts = np.array(
+            [mappings[i + 1, :] - mappings[0, :] for i in range(3)]
+        )
 
     def __len__(self) -> int:
         return self.length

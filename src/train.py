@@ -71,15 +71,19 @@ if __name__ == "__main__":
     mlflow.set_experiment(config["mlflow"]["experiment_name"])
     
     trainer = Trainer(image_path, config)
+    num_epochs = config["training"]["num_epochs"]
     with mlflow.start_run(run_name=config["mlflow"]["run_name"]):
-        for epoch in range(config["training"]["num_epochs"]):
+        for epoch in range(num_epochs):
             log_image = epoch % config["training"]["image_log_interval"] == 0
             epoch_summary = trainer.training_loop(
                 return_pred=log_image
             )
             mlflow.log_metric("epoch_loss", epoch_summary["epoch_loss"], step=epoch)
             if log_image:
-                image_path = os.path.join("images", f"image_{epoch}.png")
+                image_path = os.path.join(
+                    "images", 
+                    f"image_{(len(str(num_epochs)) - len(str(epoch))) * '0'}{epoch}.png"
+                )
                 Image.fromarray(
                     epoch_summary["pred"].view(*trainer.dataloader.dataset.shape)[:, :, 0].detach().numpy()
                 ).convert("L").save(image_path)
