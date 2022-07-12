@@ -1,26 +1,36 @@
 from src.dataset import SirenDataset
 from src.models import SirenModel
 
-import nibabel as nib
+import mlflow
 import numpy as np
+from PIL import Image
 import torch
 
 from typing import Dict, Union
 
 
 class Trainer:
-    def __init__(self, image_path: str, config: Dict[str, Union[int, bool]]) -> None:
+    def __init__(self, config: Dict[str, Union[int, bool]], *image_paths: str) -> None:
         self.config = config
         self.device = torch.device("cuda" if config["use_gpu"] else "cpu")
-        image = nib.load(image_path)
-        self.fdata = image.get_fdata()
-        self.affine = image.affine
-        self.dataloader = torch.utils.data.DataLoader(
-            SirenDataset(self.fdata, self.affine, batch_size=config["training"]["batch_size"]),
-            shuffle=False,
-            batch_size=1
-        )
-        self.num_voxels = len(self.dataloader.dataset.intensities)
+
+        self.dataloaders = [
+            torch.utils.data.DataLoader(
+                SirenDataset(image_path, batch_size=config["training"]["batch_size"]),
+                shuffle=False,
+                batch_size=1,
+            )
+            for image_path in image_paths
+        ]
+        self.val_data = [
+            dataloader.dataset.get_val_data()
+            for dataloader in self.dataloaders
+        ]
+        self.num_voxels = [
+            len(dataloader.dataset.intensities)
+            for dataloader in self.dataloaders
+        ]
+
         self.model = SirenModel(
             in_features=config["model"]["input_dim"],
             out_features=1,
@@ -32,37 +42,36 @@ class Trainer:
         ).float().to(self.device)
         self.optimizer = torch.optim.Adam(lr=float(config["training"]["lr"]), params=self.model.parameters())
     
-    def training_loop(self, return_pred: bool = False) -> Dict[str, Union[float, np.ndarray]]:
+    def training_loop(self) -> float:
         epoch_loss = 0.
         self.optimizer.zero_grad()
-        if return_pred:
-            pred = list()
-        for item in self.dataloader:
-            model_output = self.model(item["world_coordinates"].to(self.device))
-            loss = ((model_output - item["intensities"].to(self.device)) ** 2).sum() / self.num_voxels
-            epoch_loss += float(loss.detach().item())
-            if return_pred:
-                pred.append(model_output.detach().squeeze().cpu())
-            loss.backward()
+        for dataloader, num_voxel in zip(self.dataloaders, self.num_voxels):
+            for item in dataloader:
+                model_output = self.model(item["world_coordinates"].to(self.device))
+                loss = ((model_output - item["intensities"].to(self.device)) ** 2).sum() / num_voxel
+                epoch_loss += float(loss.detach().item())
+                loss.backward()
         self.optimizer.step()
-        if return_pred:
-            return {
-                "epoch_loss": epoch_loss,
-                "pred": torch.cat(pred),
-            }
-        else:
-            return {
-                "epoch_loss": epoch_loss,
-            }
+        return epoch_loss
+    
+    def validate(self, image_path: str) -> None:
+        with torch.no_grad():
+            for idx, data in enumerate(self.val_data): 
+                model_output = self.model(
+                    data["world_coordinates"].to(self.device)
+                ).view(*self.dataloaders[idx].dataset.shape[:2]).detach().cpu().numpy()
+                vis = np.concatenate((model_output, data["image"]), axis=-1)
+                Image.fromarray(vis).convert("L").save(f"{idx}_{image_path}")
+                mlflow.log_artifact(f"{idx}_{image_path}")
+                os.remove(f"{idx}_{image_path}")
 
 
 if __name__ == "__main__":
-    import mlflow
     import os
-    from PIL import Image
     import yaml
 
-    image_path = r"C:\Users\abdul\Desktop\TUM\PMSD\merge_mri\T2W_2.nii"
+    image_path_1 = r"C:\Users\abdul\Desktop\TUM\PMSD\merge_mri\T2W_1.nii"
+    image_path_2 = r"C:\Users\abdul\Desktop\TUM\PMSD\merge_mri\T2W_2.nii"
 
     with open("src/config.yaml", "r") as stream:
         config = yaml.safe_load(stream)
@@ -70,23 +79,14 @@ if __name__ == "__main__":
     mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
     mlflow.set_experiment(config["mlflow"]["experiment_name"])
     
-    trainer = Trainer(image_path, config)
+    trainer = Trainer(config, image_path_1, image_path_2)
     num_epochs = config["training"]["num_epochs"]
     with mlflow.start_run(run_name=config["mlflow"]["run_name"]):
         for epoch in range(num_epochs):
             log_image = epoch % config["training"]["image_log_interval"] == 0
-            epoch_summary = trainer.training_loop(
-                return_pred=log_image
-            )
-            mlflow.log_metric("epoch_loss", epoch_summary["epoch_loss"], step=epoch)
+            epoch_loss = trainer.training_loop()
+            mlflow.log_metric("epoch_loss", epoch_loss, step=epoch)
             if log_image:
-                image_path = os.path.join(
-                    "images", 
-                    f"image_{(len(str(num_epochs)) - len(str(epoch))) * '0'}{epoch}.png"
-                )
-                Image.fromarray(
-                    epoch_summary["pred"].view(*trainer.dataloader.dataset.shape)[:, :, 0].detach().numpy()
-                ).convert("L").save(image_path)
-                mlflow.log_artifact(image_path)
-                os.remove(image_path)
+                image_path = f"image_{(len(str(num_epochs)) - len(str(epoch))) * '0'}{epoch}.png"
+                trainer.validate(image_path)
         mlflow.pytorch.log_model(trainer.model, "model")

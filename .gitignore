@@ -2,6 +2,7 @@
 *.dicom
 __pycache__
 *.ipynb
+*.png
 .ipynb_checkpoints
 mlruns
 images

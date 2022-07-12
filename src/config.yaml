@@ -2,8 +2,8 @@ use_gpu: True
 
 mlflow:
   tracking_uri: "http://localhost:1234"
-  experiment_name: "3D"
-  run_name: "baseline"
+  experiment_name: "join_3D"
+  run_name: "two_images"
 
 model:
   input_dim: 3
