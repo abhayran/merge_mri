@@ -1,4 +1,4 @@
-from src.utils import get_mgrid
+from src.utils import get_mgrid, get_shifts
 
 import torch
 import nibabel as nib
@@ -8,16 +8,14 @@ from typing import Dict, Union
 
 
 class SirenDataset(torch.utils.data.Dataset):
-    def __init__(self, image_path: str, batch_size: int) -> None:
-        image = nib.load(image_path)
-        fdata = image.get_fdata()
-        affine = image.affine
-        
-        self.fdata = torch.tensor(fdata)
-        self.affine = affine
+    def __init__(self, fdata: torch.Tensor, affine: np.ndarray, batch_size: int) -> None:
+        self.fdata = fdata
         self.shape = tuple(self.fdata.shape)
         assert len(self.shape) == 3
-
+        
+        self.affine = affine
+        self.shifts = get_shifts(affine)
+        
         self.voxel_coordinates = get_mgrid(*((0, shape) for shape in self.shape))
         self.intensities = self.fdata[
             self.voxel_coordinates[:, 0],
@@ -35,13 +33,6 @@ class SirenDataset(torch.utils.data.Dataset):
 
         self.batch_size = batch_size
         self.length = (len(self.intensities) - 1) // self.batch_size + 1
-
-        mappings = nib.affines.apply_affine(
-            self.affine, np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=float)
-        )
-        self.shifts = np.array(
-            [mappings[i + 1, :] - mappings[0, :] for i in range(3)]
-        )
 
     def get_val_data(self) -> Dict[str, Union[torch.Tensor, np.ndarray]]:
         voxel_coordinates = get_mgrid(

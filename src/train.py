@@ -1,5 +1,6 @@
 from src.dataset import SirenDataset
 from src.models import SirenModel
+from src.utils import extract_data
 
 import mlflow
 import numpy as np
@@ -14,13 +15,14 @@ class Trainer:
         self.config = config
         self.device = torch.device("cuda" if config["use_gpu"] else "cpu")
 
+        fdata_list, affine_list = extract_data(*image_paths)
         self.dataloaders = [
             torch.utils.data.DataLoader(
-                SirenDataset(image_path, batch_size=config["training"]["batch_size"]),
+                SirenDataset(fdata, affine, batch_size=config["training"]["batch_size"]),
                 shuffle=False,
                 batch_size=1,
             )
-            for image_path in image_paths
+            for fdata, affine in zip(fdata_list, affine_list)
         ]
         self.val_data = [
             dataloader.dataset.get_val_data()
@@ -70,8 +72,11 @@ if __name__ == "__main__":
     import os
     import yaml
 
-    image_path_1 = r"C:\Users\abdul\Desktop\TUM\PMSD\merge_mri\T2W_1.nii"
-    image_path_2 = r"C:\Users\abdul\Desktop\TUM\PMSD\merge_mri\T2W_2.nii"
+    image_paths = [
+        r"C:\Users\abdul\Desktop\TUM\PMSD\merge_mri\Becken_T2_cor.nii",
+        r"C:\Users\abdul\Desktop\TUM\PMSD\merge_mri\Becken_T2_sag.nii",
+        r"C:\Users\abdul\Desktop\TUM\PMSD\merge_mri\Becken_T2_tra.nii",
+    ]
 
     with open("src/config.yaml", "r") as stream:
         config = yaml.safe_load(stream)
@@ -79,14 +84,15 @@ if __name__ == "__main__":
     mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
     mlflow.set_experiment(config["mlflow"]["experiment_name"])
     
-    trainer = Trainer(config, image_path_1, image_path_2)
+    trainer = Trainer(config, *image_paths)
     num_epochs = config["training"]["num_epochs"]
     with mlflow.start_run(run_name=config["mlflow"]["run_name"]):
         for epoch in range(num_epochs):
-            log_image = epoch % config["training"]["image_log_interval"] == 0
             epoch_loss = trainer.training_loop()
             mlflow.log_metric("epoch_loss", epoch_loss, step=epoch)
-            if log_image:
+            if (epoch + 1) % config["training"]["image_log_interval"] == 0:
                 image_path = f"image_{(len(str(num_epochs)) - len(str(epoch))) * '0'}{epoch}.png"
                 trainer.validate(image_path)
+            if (epoch + 1) % config["training"]["model_log_interval"] == 0:
+                mlflow.pytorch.log_model(trainer.model, f"model_{epoch + 1}")
         mlflow.pytorch.log_model(trainer.model, "model")

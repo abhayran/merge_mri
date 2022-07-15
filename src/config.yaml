@@ -3,7 +3,7 @@ use_gpu: True
 mlflow:
   tracking_uri: "http://localhost:1234"
   experiment_name: "join_3D"
-  run_name: "two_images"
+  run_name: "three_images"
 
 model:
   input_dim: 3
@@ -13,5 +13,6 @@ model:
 training:
   lr: 3e-4
   batch_size: 500000
-  num_epochs: 2000
+  num_epochs: 8000
   image_log_interval: 10
+  model_log_interval: 50
