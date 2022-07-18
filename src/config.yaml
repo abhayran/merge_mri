@@ -1,18 +1,25 @@
 use_gpu: True
+deformable: True
 
 mlflow:
   tracking_uri: "http://localhost:1234"
   experiment_name: "join_3D"
   run_name: "three_images"
 
-model:
+intensity_model:
   input_dim: 3
   hidden_dim: 256
   num_hidden_layers: 3
 
+coordinate_mapper:
+  regularization_weight: 0.
+  input_dim: 3
+  hidden_dim: 32
+  num_hidden_layers: 2
+
 training:
   lr: 3e-4
-  batch_size: 500000
-  num_epochs: 8000
+  batch_size: 400000
+  num_epochs: 2600
   image_log_interval: 10
   model_log_interval: 50

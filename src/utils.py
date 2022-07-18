@@ -28,7 +28,7 @@ def get_shifts(affine: np.ndarray) -> np.ndarray:
     )
 
 
-def extract_data(*image_paths: str) -> Tuple[List[torch.Tensor], List[np.ndarray]]:    
+def extract_data(*image_paths: str) -> Tuple[List[torch.Tensor], List[np.ndarray], float]:    
     fdata_list = [
         torch.tensor(nib.load(image_path).get_fdata())
         for image_path in image_paths
@@ -81,4 +81,34 @@ def extract_data(*image_paths: str) -> Tuple[List[torch.Tensor], List[np.ndarray
         )
         affine[:3, -1] += shift
         affine_to_return.append(affine)
-    return fdata_to_return, affine_to_return
+    to_normalize_with = max(torch.max(fdata).item() for fdata in fdata_to_return)
+    return [item / to_normalize_with for item in fdata_to_return], affine_to_return, to_normalize_with
+
+
+def compute_jacobian_loss(input_coords, output, batch_size=None):
+    """Compute the jacobian regularization loss."""
+    # Compute Jacobian matrices
+    jac = compute_jacobian_matrix(input_coords, output)
+    # Compute determinants and take norm
+    loss = torch.det(jac) - 1
+    loss = torch.linalg.norm(loss, 1)
+    return loss / batch_size
+
+
+def compute_jacobian_matrix(input_coords, output, add_identity=True):
+    """Compute the Jacobian matrix of the output wrt the input."""
+    jacobian_matrix = torch.zeros(input_coords.shape[0], 3, 3)
+    for i in range(3):
+        jacobian_matrix[:, i, :] = gradient(input_coords, output[:, i])
+        if add_identity:
+            jacobian_matrix[:, i, i] += torch.ones_like(jacobian_matrix[:, i, i])
+    return jacobian_matrix
+
+
+def gradient(input_coords, output, grad_outputs=None):
+    """Compute the gradient of the output wrt the input."""
+    grad_outputs = torch.ones_like(output)
+    grad = torch.autograd.grad(
+        output, [input_coords], grad_outputs=grad_outputs, create_graph=True
+    )[0]
+    return grad

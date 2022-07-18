@@ -34,11 +34,13 @@ class SirenDataset(torch.utils.data.Dataset):
         self.batch_size = batch_size
         self.length = (len(self.intensities) - 1) // self.batch_size + 1
 
-    def get_val_data(self) -> Dict[str, Union[torch.Tensor, np.ndarray]]:
+    def get_val_data(self, to_div=None) -> Dict[str, Union[torch.Tensor, np.ndarray]]:
+        if to_div is None:
+            to_div = 2
         voxel_coordinates = get_mgrid(
             (0, self.shape[0]),
             (0, self.shape[1]),
-            (self.shape[2] // 2, self.shape[2] // 2 + 1)
+            (int(self.shape[2] // to_div), int(self.shape[2] // to_div) + 1)
         )
         world_coordinates = torch.tensor(
             nib.affines.apply_affine(
@@ -48,7 +50,7 @@ class SirenDataset(torch.utils.data.Dataset):
         ).float() / 100.
         return {
             "world_coordinates": world_coordinates,
-            "image": self.fdata[:, :, self.shape[2] // 2]
+            "image": self.fdata[:, :, int(self.shape[2] // to_div)]
         }
 
     def __len__(self) -> int:
